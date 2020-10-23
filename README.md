@@ -6,4 +6,20 @@ This library is based on the java port https://github.com/the3deers/earcut-java 
 
 ## usage
 
-an easy to use maven packge will be provided in the coming days
+The library can be added as maven project. It is hosted using the gitlab package registry. 
+
+Add the project's maven repository (gradle):
+```
+repositories {
+    maven {  
+        url "https://gitlab.com/api/v4/projects/21979444/packages/maven"  
+        name "GitLab"  
+    }  
+}
+```
+add the dependency:
+```
+dependencies {
+ implementation("de.urbanistic:earcut-kotlin:1.0.0")
+}
+```
