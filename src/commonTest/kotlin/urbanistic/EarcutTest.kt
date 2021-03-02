@@ -39,6 +39,8 @@ import touching2
 import touching3
 import touching4
 import touching_holes
+import urbanistic.earcut.toXY
+import urbanistic.transform.normal
 import water3
 import water3b
 import kotlin.test.assertEquals
@@ -47,7 +49,7 @@ import kotlin.test.assertEquals
 class EarcutTest{
 
 
-    private fun doDeviation(input : Array<Array<DoubleArray>>, triangles : List<Int>) : Double{
+    /*private fun doDeviation(input : Array<Array<DoubleArray>>, triangles : List<Int>) : Double{
         val earcutInput = flatten(input)
 
         val vertices : DoubleArray = earcutInput[0] as DoubleArray
@@ -341,5 +343,24 @@ class EarcutTest{
         println("water3b: $result")
         println("tris: ${expextedTriangleCount["water3b"]} -> ${result!!.size/3}")
         assertEquals(expextedTriangleCount["water3b"], result.size/3)
+    }*/
+
+
+    @Test
+    fun toXY_Test(){
+        val nonXY = doubleArrayOf(
+                0.0, 0.0, 0.0,
+                10.0, 0.0, 10.0,
+                10.0, 10.0, 10.0,
+                0.0, 10.0, 0.0)
+        val normal = normal(nonXY)
+        for(d in normal)
+            println(d)
+        val xy = toXY(nonXY)
+        for(d in xy)
+            println(d)
     }
+
+
+
 }

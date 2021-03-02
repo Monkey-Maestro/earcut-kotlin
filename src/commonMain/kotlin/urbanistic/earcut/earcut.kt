@@ -1,5 +1,7 @@
 package urbanistic.earcut
 
+import urbanistic.transform.AnyToXYTransform
+import urbanistic.transform.normal
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -126,6 +128,17 @@ val xComparator = Comparator { a: Node, b: Node -> compareValues(a.x, b.x)}
         }
 
         return arrayOf(f.toDoubleArray(), hi.toIntArray(), dim)
+    }
+
+/**
+ * lays any 3Dimensional planar polygon out on xy plane
+ */
+fun toXY(data: DoubleArray) : DoubleArray{
+        val normal = normal(data)
+        val anyToXYTransform = AnyToXYTransform(normal[0], normal[1], normal[2])
+        val result = data.copyOf()
+        anyToXYTransform.transform(result)
+        return result
     }
 
 
