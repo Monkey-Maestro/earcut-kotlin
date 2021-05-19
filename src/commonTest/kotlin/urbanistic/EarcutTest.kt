@@ -49,7 +49,7 @@ import kotlin.test.assertEquals
 class EarcutTest{
 
 
-    /*private fun doDeviation(input : Array<Array<DoubleArray>>, triangles : List<Int>) : Double{
+    private fun doDeviation(input : Array<Array<DoubleArray>>, triangles : List<Int>) : Double{
         val earcutInput = flatten(input)
 
         val vertices : DoubleArray = earcutInput[0] as DoubleArray
@@ -343,7 +343,7 @@ class EarcutTest{
         println("water3b: $result")
         println("tris: ${expextedTriangleCount["water3b"]} -> ${result!!.size/3}")
         assertEquals(expextedTriangleCount["water3b"], result.size/3)
-    }*/
+    }
 
 
     @Test

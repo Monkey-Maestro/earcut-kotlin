@@ -1,12 +1,20 @@
 import java.util.*
 import org.gradle.api.publish.PublishingExtension
+import java.lang.System.getenv
 
 plugins {
     id("maven-publish")
-    kotlin("multiplatform") version "1.4.10"
+    kotlin("multiplatform") version "1.5.0"
 }
-group = "de.urbanistic"
-version = "1.0.1"
+
+
+allprojects {
+    group = "de.urbanistic"
+    version = System.getenv("GITHUB_REF")?.split('/')?.last() ?: "development"
+    //version = "1.0.1"
+}
+
+
 
 
 repositories {
@@ -65,17 +73,16 @@ kotlin {
     }
 }
 
+/*
 //load local propertie file
 val local = Properties()
 val localProperties: File = rootProject.file("local.properties")
 if (localProperties.exists()) {
     localProperties.inputStream().use { local.load(it) }
 }
-val gitLabPrivateToken: String = local.getProperty("gitLabPrivateToken")
-
-
 
 publishing {
+    val gitLabPrivateToken: String = local.getProperty("gitLabPrivateToken")
     repositories {
         maven {
             url = uri("https://gitlab.com/api/v4/projects/21979444/packages/maven")
@@ -86,6 +93,20 @@ publishing {
             }
             authentication {
                 create<HttpHeaderAuthentication>("header")
+            }
+        }
+    }
+}*/
+
+
+
+getenv("GITHUB_REPOSITORY")?.let {
+    publishing {
+        repositories {
+            maven {
+                name = "github"
+                url = uri("https://maven.pkg.github.com/$it")
+                credentials(PasswordCredentials::class){}
             }
         }
     }
