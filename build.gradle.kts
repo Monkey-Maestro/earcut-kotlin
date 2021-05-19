@@ -73,15 +73,13 @@ kotlin {
     }
 }
 
+/*
 //load local propertie file
 val local = Properties()
 val localProperties: File = rootProject.file("local.properties")
 if (localProperties.exists()) {
     localProperties.inputStream().use { local.load(it) }
 }
-
-
-
 
 publishing {
     val gitLabPrivateToken: String = local.getProperty("gitLabPrivateToken")
@@ -98,7 +96,7 @@ publishing {
             }
         }
     }
-}
+}*/
 
 
 
