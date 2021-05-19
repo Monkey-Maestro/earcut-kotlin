@@ -106,7 +106,10 @@ getenv("GITHUB_REPOSITORY")?.let {
             maven {
                 name = "github"
                 url = uri("https://maven.pkg.github.com/$it")
-                credentials(PasswordCredentials::class){}
+                credentials(PasswordCredentials::class){
+                    username = System.getenv("GITHUB_ACTOR")
+                    password = System.getenv("GITHUB_TOKEN")
+                }
             }
         }
     }
