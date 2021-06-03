@@ -2,6 +2,28 @@ import java.util.*
 import org.gradle.api.publish.PublishingExtension
 import java.lang.System.getenv
 
+
+//We need to differentiate if we are building local or if Github Actions are used to build the Project!
+var user_name : String
+var user_pat : String
+var maven_url : String
+var current_spacecenter_tag : String = "1.0.0"
+if(System.getenv("GITHUB_REPOSITORY") != null){
+    //if we are in github we use the environmental variables provided by github
+    user_name = System.getenv("GITHUB_ACTOR")
+    user_pat = System.getenv("GITHUB_TOKEN")
+    maven_url = "https://maven.pkg.github.com/${System.getenv("GITHUB_TOKEN")}"
+    current_spacecenter_tag = System.getenv("GITHUB_TAG")
+}else{
+    //else we need to use our cutsom credentials stored in the local.properties file
+    val local = Properties()
+    local.load(rootProject.file("local.properties").inputStream())
+    user_name = local.getProperty("github.user") //
+    user_pat = local.getProperty("github.token") // pat with scope: read packages
+    maven_url = local.getProperty("maven.url")
+}
+
+
 plugins {
     id("maven-publish")
     kotlin("multiplatform") version "1.5.0"
@@ -10,11 +32,9 @@ plugins {
 
 allprojects {
     group = "de.urbanistic"
-    version = System.getenv("GITHUB_REF")?.split('/')?.last() ?: "development"
+    version = current_spacecenter_tag
     //version = "1.0.1"
 }
-
-
 
 
 repositories {
@@ -25,7 +45,6 @@ kotlin {
         compilations.all {
             kotlinOptions.jvmTarget = "1.8"
         }
-
     }
     js(IR) {
         browser {
@@ -73,43 +92,15 @@ kotlin {
     }
 }
 
-/*
-//load local propertie file
-val local = Properties()
-val localProperties: File = rootProject.file("local.properties")
-if (localProperties.exists()) {
-    localProperties.inputStream().use { local.load(it) }
-}
 
 publishing {
-    val gitLabPrivateToken: String = local.getProperty("gitLabPrivateToken")
     repositories {
         maven {
-            url = uri("https://gitlab.com/api/v4/projects/21979444/packages/maven")
-            name = "GitLab"
-            credentials(HttpHeaderCredentials::class) {
-                name = "Private-Token"
-                value = gitLabPrivateToken
-            }
-            authentication {
-                create<HttpHeaderAuthentication>("header")
-            }
-        }
-    }
-}*/
-
-
-
-getenv("GITHUB_REPOSITORY")?.let {
-    publishing {
-        repositories {
-            maven {
-                name = "github"
-                url = uri("https://maven.pkg.github.com/$it")
-                credentials(PasswordCredentials::class){
-                    username = System.getenv("GITHUB_ACTOR")
-                    password = System.getenv("GITHUB_TOKEN")
-                }
+            name = "github"
+            url = uri(maven_url)
+            credentials(PasswordCredentials::class) {
+                username = user_name
+                password = user_pat
             }
         }
     }
