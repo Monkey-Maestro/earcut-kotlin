@@ -27,16 +27,17 @@ class Node(var i: Int, var x: Double, var y: Double) {
     var nextZ: Node? = null
     var prevZ: Node? = null
 }
+
 val xComparator = Comparator { a: Node, b: Node -> compareValues(a.x, b.x) }
 
+// done
 fun earcut(data: DoubleArray, holeIndices: IntArray, dim: Int): List<Int> {
     val hasHoles = holeIndices.isNotEmpty()
     val outerLen = if (hasHoles) holeIndices[0] * dim else data.size
-
     var outerNode: Node? = linkedList(data, 0, outerLen, dim, true)
-    if (outerNode == null || outerNode.next === outerNode.prev) return emptyList()
-
     val triangles: MutableList<Int> = mutableListOf()
+
+    if (outerNode == null || outerNode.next === outerNode.prev) return triangles
 
     var minX = 0.0
     var minY = 0.0
@@ -53,26 +54,235 @@ fun earcut(data: DoubleArray, holeIndices: IntArray, dim: Int): List<Int> {
     // if the shape is not too simple, we'll use z-order curve hash later; calculate polygon bbox
     if (data.size > 80 * dim) {
         maxX = data[0]
-        minX = maxX
+        minX = data[0]
         maxY = data[1]
-        minY = maxY
-        var i = dim
-        while (i < outerLen) {
+        minY = data[1]
+
+        for (i in dim until outerLen) {
             x = data[i]
             y = data[i + 1]
             if (x < minX) minX = x
             if (y < minY) minY = y
             if (x > maxX) maxX = x
             if (y > maxY) maxY = y
-            i += dim
         }
 
         // minX, minY and invSize are later used to transform coords into integers for z-order calculation
         invSize = max(maxX - minX, maxY - minY)
-        invSize = if (invSize != 0.0) 1 / invSize else 0.0
+        invSize = if (invSize != 0.0) 32767 / invSize else 0.0
     }
+
     earcutLinked(outerNode, triangles, dim, minX, minY, invSize, 0)
+
     return triangles
+}
+
+// done
+// create a circular doubly linked list from polygon points in the specified winding order
+private fun linkedList(data: DoubleArray, start: Int, end: Int, dim: Int, clockwise: Boolean): Node? {
+    var last: Node? = null
+
+    if (clockwise == (signedArea(data, start, end, dim) > 0)) {
+        for(i in start until end){
+            last = insertNode(i, data[i], data[i + 1], last)
+        }
+    } else {
+        for(i in (end - dim) downTo start){
+            last = insertNode(i, data[i], data[i + 1], last)
+        }
+    }
+
+    if (last != null && equals(last, last.next)) {
+        removeNode(last)
+        last = last.next
+    }
+
+    return last
+}
+
+// done
+// eliminate collinear or duplicate points
+private fun filterPoints(start: Node?, _end: Node?): Node? {
+    var end: Node? = _end
+
+    if(start == null) return start
+    if(end == null) end = start
+
+    var p: Node = start
+    var again: Boolean
+
+    do {
+        again = false
+
+        if (!p.steiner && (equals(p, p.next) || area(p.prev, p, p.next) == 0.0)) {
+            removeNode(p)
+            p = p.prev
+            end = p.prev
+            if (p === p.next) break
+            again = true
+
+        } else {
+            p = p.next
+        }
+    } while (again || p !== end)
+
+    return end
+}
+
+// done
+// main ear slicing loop which triangulates a polygon (given as a linked list)
+private fun earcutLinked(
+    _ear: Node?,
+    triangles: MutableList<Int>,
+    dim: Int,
+    minX: Double,
+    minY: Double,
+    invSize: Double,
+    pass: Int
+) {
+    var ear: Node = _ear ?: return
+
+    // interlink polygon nodes in z-order
+    if (pass == 0 && invSize != 0.0) indexCurve(ear, minX, minY, invSize)
+
+    var stop: Node = ear
+    var prev: Node
+    var next: Node
+
+    // iterate through ears, slicing them one by one
+    while (ear.prev !== ear.next) {
+        prev = ear.prev
+        next = ear.next
+
+        if (if (invSize != 0.0) isEarHashed(ear, minX, minY, invSize) else isEar(ear)) {
+            // cut off the triangle
+            triangles.add(prev.i / dim or 0)
+            triangles.add(ear.i / dim or 0)
+            triangles.add(next.i / dim or 0)
+
+            removeNode(ear)
+
+            // skipping the next vertex leads to less sliver triangles
+            ear = next.next
+            stop = next.next
+
+            continue
+        }
+
+        ear = next
+
+        // if we looped through the whole remaining polygon and can't find any more ears
+        if (ear === stop) {
+            when (pass) {
+                // try filtering points and slicing again
+                0 -> {
+                    earcutLinked(filterPoints(ear, null), triangles, dim, minX, minY, invSize, 1)
+                }
+                // if this didn't work, try curing all small self-intersections locally
+                1 -> {
+                    ear = cureLocalIntersections(filterPoints(ear, null), triangles, dim)
+                    earcutLinked(ear, triangles, dim, minX, minY, invSize, 2)
+                }
+                // as a last resort, try splitting the remaining polygon into two
+                2 -> {
+                    splitEarcut(ear, triangles, dim, minX, minY, invSize)
+                }
+            }
+
+            break
+        }
+    }
+}
+
+// done
+// check whether a polygon node forms a valid ear with adjacent nodes
+private fun isEar(ear: Node): Boolean {
+    val a: Node = ear.prev
+    val b: Node = ear
+    val c: Node = ear.next
+
+    if (area(a, b, c) >= 0) return false // reflex, can't be an ear
+
+    val ax = a.x
+    val bx = b.x
+    val cx = c.x
+    val ay = a.y
+    val by = b.y
+    val cy = c.y
+
+    // triangle bbox; min & max are calculated like this for speed
+    val x0 = if (ax < bx) (if (ax < cx) ax else cx) else if (bx < cx) bx else cx
+    val y0 = if (ay < by) (if (ay < cy) ay else cy) else if (by < cy) by else cy
+    val x1 = if (ax > bx) (if (ax > cx) ax else cx) else if (bx > cx) bx else cx
+    val y1 = if (ay > by) (if (ay > cy) ay else cy) else if (by > cy) by else cy
+
+    // now make sure we don't have other points inside the potential ear
+    var p = c.next
+    while (p !== a) {
+        if (p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1 &&
+            pointInTriangle(ax, ay, bx, by, cx, cy, p.x, p.y) &&
+            area(p.prev, p, p.next) >= 0) return false
+        p = p.next;
+    }
+
+    return true
+}
+
+// done
+private fun isEarHashed(ear: Node, minX: Double, minY: Double, invSize: Double): Boolean {
+    val a: Node = ear.prev
+    val b: Node = ear
+    val c: Node = ear.next
+
+    if (area(a, b, c) >= 0) return false // reflex, can't be an ear
+
+    val ax = a.x
+    val bx = b.x
+    val cx = c.x
+    val ay = a.y
+    val by = b.y
+    val cy = c.y
+
+    // triangle bbox; min & max are calculated like this for speed
+    val x0 = if (ax < bx) (if (ax < cx) ax else cx) else if (bx < cx) bx else cx
+    val y0 = if (ay < by) (if (ay < cy) ay else cy) else if (by < cy) by else cy
+    val x1 = if (ax > bx) (if (ax > cx) ax else cx) else if (bx > cx) bx else cx
+    val y1 = if (ay > by) (if (ay > cy) ay else cy) else if (by > cy) by else cy
+
+    // z-order range for the current triangle bbox;
+    val minZ = zOrder(x0, y0, minX, minY, invSize)
+    val maxZ = zOrder(x1, y1, minX, minY, invSize)
+
+    var p = ear.prevZ
+    var n = ear.nextZ
+
+    // look for points inside the triangle in both directions
+    while (p != null && p.z >= minZ && n != null && n.z <= maxZ) {
+        if (p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1 && p !== a && p !== c &&
+            pointInTriangle(ax, ay, bx, by, cx, cy, p.x, p.y) && area(p.prev, p, p.next) >= 0) return false
+        p = p.prevZ
+
+        if (n.x >= x0 && n.x <= x1 && n.y >= y0 && n.y <= y1 && n !== a && n !== c &&
+            pointInTriangle(ax, ay, bx, by, cx, cy, n.x, n.y) && area(n.prev, n, n.next) >= 0) return false
+        n = n.nextZ
+    }
+
+    // look for remaining points in decreasing z-order
+    while (p != null && p.z >= minZ) {
+        if (p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1 && p !== a && p !== c &&
+            pointInTriangle(ax, ay, bx, by, cx, cy, p.x, p.y) && area(p.prev, p, p.next) >= 0) return false
+        p = p.prevZ
+    }
+
+
+    // look for remaining points in increasing z-order
+    while (n != null && n.z <= maxZ) {
+        if (n.x >= x0 && n.x <= x1 && n.y >= y0 && n.y <= y1 && n !== a && n !== c &&
+            pointInTriangle(ax, ay, bx, by, cx, cy, n.x, n.y) && area(n.prev, n, n.next) >= 0) return false
+        n = n.nextZ
+    }
+
+    return true
 }
 
 // return a percentage difference between the polygon area and its triangulation area;
@@ -99,7 +309,7 @@ fun deviation(data: DoubleArray, holeIndices: IntArray?, dim: Int, triangles: Li
         val c = triangles[i + 2] * dim
         trianglesArea += abs(
             (data[a] - data[c]) * (data[b + 1] - data[a + 1]) -
-                (data[a] - data[b]) * (data[c + 1] - data[a + 1])
+                    (data[a] - data[b]) * (data[c + 1] - data[a + 1])
         )
         i += 3
     }
@@ -136,200 +346,8 @@ fun toXY(data: DoubleArray): DoubleArray {
     return result
 }
 
-// create a circular doubly linked list from polygon points in the specified winding order
-private fun linkedList(data: DoubleArray, start: Int, end: Int, dim: Int, clockwise: Boolean): Node? {
-    var i: Int
-    var last: Node? = null
-    if (clockwise == signedArea(data, start, end, dim) > 0) {
-        i = start
-        while (i < end) {
-            last = insertNode(i, data[i], data[i + 1], last)
-            i += dim
-        }
-    } else {
-        i = end - dim
-        while (i >= start) {
-            last = insertNode(i, data[i], data[i + 1], last)
-            i -= dim
-        }
-    }
-    if (last != null && equals(last, last.next)) {
-        removeNode(last)
-        last = last.next
-    }
-    return last
-}
-
-// eliminate colinear or duplicate points
-private fun filterPoints(start: Node, _end: Node?): Node {
-    var end: Node? = _end
-    if (end == null) end = start
-    var p: Node? = start
-    var again: Boolean
-
-    do {
-        again = false
-        if (!p!!.steiner && (equals(p, p.next) || area(p.prev, p, p.next) == 0.0)) {
-            removeNode(p)
-            end = p.prev
-            p = end
-            if (p === p.next) break
-            again = true
-        } else {
-            p = p.next
-        }
-    } while (again || p !== end)
-
-    return end!!
-}
-
-// main ear slicing loop which triangulates a polygon (given as a linked list)
-private fun earcutLinked(
-    _ear: Node?,
-    triangles: MutableList<Int>,
-    dim: Int,
-    minX: Double,
-    minY: Double,
-    invSize: Double,
-    pass: Int
-) {
-    var ear: Node? = _ear ?: return
-
-    // interlink polygon nodes in z-order
-    if (pass == 0 && invSize != 0.0) indexCurve(ear!!, minX, minY, invSize)
-    var stop: Node = ear!!
-    var prev: Node
-    var next: Node
-
-    // iterate through ears, slicing them one by one
-    while (ear!!.prev !== ear!!.next) {
-        prev = ear!!.prev
-        next = ear.next
-        if (if (invSize != 0.0) isEarHashed(ear, minX, minY, invSize) else isEar(ear)) {
-            // cut off the triangle
-            triangles.add(prev.i / dim)
-            triangles.add(ear.i / dim)
-            triangles.add(next.i / dim)
-            removeNode(ear)
-
-            // skipping the next vertex leads to less sliver triangles
-            ear = next.next
-            stop = next.next
-            continue
-        }
-        ear = next
-
-        // if we looped through the whole remaining polygon and can't find any more ears
-        if (ear === stop) {
-            // try filtering points and slicing again
-            when (pass) {
-                0 -> {
-                    earcutLinked(filterPoints(ear, null), triangles, dim, minX, minY, invSize, 1)
-
-                    // if this didn't work, try curing all small self-intersections locally
-                }
-                1 -> {
-                    ear = cureLocalIntersections(filterPoints(ear, null), triangles, dim)
-                    earcutLinked(ear, triangles, dim, minX, minY, invSize, 2)
-
-                    // as a last resort, try splitting the remaining polygon into two
-                }
-                2 -> {
-                    splitEarcut(ear, triangles, dim, minX, minY, invSize)
-                }
-            }
-            break
-        }
-    }
-}
-
-// check whether a polygon node forms a valid ear with adjacent nodes
-private fun isEar(ear: Node): Boolean {
-    val a: Node = ear.prev
-    val b: Node = ear
-    val c: Node = ear.next
-    if (area(a, b, c) >= 0) return false // reflex, can't be an ear
-
-    // now make sure we don't have other points inside the potential ear
-    var p: Node? = ear.next.next
-    while (p !== ear.prev) {
-        if (pointInTriangle(a.x, a.y, b.x, b.y, c.x, c.y, p!!.x, p.y) &&
-            area(p.prev, p, p.next) >= 0
-        ) {
-            return false
-        }
-        p = p.next
-    }
-    return true
-}
-
-private fun isEarHashed(ear: Node, minX: Double, minY: Double, invSize: Double): Boolean {
-    val a: Node = ear.prev
-    val b: Node = ear
-    val c: Node = ear.next
-    if (area(a, b, c) >= 0) return false // reflex, can't be an ear
-
-    // triangle bbox; min & max are calculated like this for speed
-    val minTX: Double = if (a.x < b.x) if (a.x < c.x) a.x else c.x else if (b.x < c.x) b.x else c.x
-    val minTY: Double = if (a.y < b.y) if (a.y < c.y) a.y else c.y else if (b.y < c.y) b.y else c.y
-    val maxTX: Double = if (a.x > b.x) if (a.x > c.x) a.x else c.x else if (b.x > c.x) b.x else c.x
-    val maxTY: Double = if (a.y > b.y) if (a.y > c.y) a.y else c.y else if (b.y > c.y) b.y else c.y
-
-    // z-order range for the current triangle bbox;
-    val minZ: Double = zOrder(minTX, minTY, minX, minY, invSize)
-    val maxZ: Double = zOrder(maxTX, maxTY, minX, minY, invSize)
-    var p: Node? = ear.prevZ
-    var n: Node? = ear.nextZ
-
-    // look for points inside the triangle in both directions
-    while (p != null && p.z >= minZ && n != null && n.z <= maxZ) {
-        if (p !== ear.prev && p !== ear.next &&
-            pointInTriangle(a.x, a.y, b.x, b.y, c.x, c.y, p.x, p.y) &&
-            area(p.prev, p, p.next) >= 0
-        ) {
-            return false
-        }
-
-        p = p.prevZ
-        if (n !== ear.prev && n !== ear.next &&
-            pointInTriangle(a.x, a.y, b.x, b.y, c.x, c.y, n.x, n.y) &&
-            area(n.prev, n, n.next) >= 0
-        ) {
-            return false
-        }
-
-        n = n.nextZ
-    }
-
-    // look for remaining points in decreasing z-order
-    while (p != null && p.z >= minZ) {
-        if (p !== ear.prev && p !== ear.next &&
-            pointInTriangle(a.x, a.y, b.x, b.y, c.x, c.y, p.x, p.y) &&
-            area(p.prev, p, p.next) >= 0
-        ) {
-            return false
-        }
-
-        p = p.prevZ
-    }
-
-    // look for remaining points in increasing z-order
-    while (n != null && n.z <= maxZ) {
-        if (n !== ear.prev && n !== ear.next &&
-            pointInTriangle(a.x, a.y, b.x, b.y, c.x, c.y, n.x, n.y) &&
-            area(n.prev, n, n.next) >= 0
-        ) {
-            return false
-        }
-
-        n = n.nextZ
-    }
-
-    return true
-}
-
 // go through all polygon nodes and cure small local self-intersections
-private fun cureLocalIntersections(_start: Node, triangles: MutableList<Int>, dim: Int): Node {
+private fun cureLocalIntersections(_start: Node?, triangles: MutableList<Int>, dim: Int): Node {
     var start: Node = _start
     var p: Node = start
     do {
@@ -352,7 +370,14 @@ private fun cureLocalIntersections(_start: Node, triangles: MutableList<Int>, di
 }
 
 // try splitting polygon into two and triangulate them independently
-private fun splitEarcut(start: Node, triangles: MutableList<Int>, dim: Int, minX: Double, minY: Double, invSize: Double) {
+private fun splitEarcut(
+    start: Node,
+    triangles: MutableList<Int>,
+    dim: Int,
+    minX: Double,
+    minY: Double,
+    invSize: Double
+) {
     // look for a valid diagonal that divides the polygon into two
     var a: Node? = start
     do {
@@ -602,11 +627,15 @@ private fun pointInTriangle(
 // check if a diagonal between two polygon nodes is valid (lies in polygon interior)
 private fun isValidDiagonal(a: Node, b: Node): Boolean {
     return a.next.i != b.i && a.prev.i != b.i && !intersectsPolygon(a, b) && // dones't intersect other edges
-        (
-            locallyInside(a, b) && locallyInside(b, a) && middleInside(a, b) && // locally visible
-                (area(a.prev, a, b.prev) != 0.0 || area(a, b.prev, b) != 0.0) || // does not create opposite-facing sectors
-                equals(a, b) && area(a.prev, a, a.next) > 0 && area(b.prev, b, b.next) > 0
-            ) // special zero-length case
+            (
+                    locallyInside(a, b) && locallyInside(b, a) && middleInside(a, b) && // locally visible
+                            (area(a.prev, a, b.prev) != 0.0 || area(
+                                a,
+                                b.prev,
+                                b
+                            ) != 0.0) || // does not create opposite-facing sectors
+                            equals(a, b) && area(a.prev, a, a.next) > 0 && area(b.prev, b, b.next) > 0
+                    ) // special zero-length case
 }
 
 // signed area of a triangle
