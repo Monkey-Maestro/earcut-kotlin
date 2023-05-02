@@ -3,12 +3,13 @@ import java.util.*
 plugins {
     id("maven-publish")
     kotlin("multiplatform") version "1.8.21"
+    kotlin("plugin.serialization") version "1.8.21"
     id("org.jlleitschuh.gradle.ktlint") version "11.3.2"
 }
 
 allprojects {
     group = "de.urbanistic"
-    version = "1.0.0"
+    version = "2.2.4"
 }
 
 repositories {
@@ -51,6 +52,7 @@ kotlin {
             dependencies {
                 implementation(kotlin("test-common"))
                 implementation(kotlin("test-annotations-common"))
+                implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.5.0")
             }
         }
         val jvmMain by getting
@@ -73,13 +75,6 @@ kotlin {
 publishing {
     repositories {
         maven {
-            // name = "github"
-            // url = uri(maven_url)
-            // credentials(PasswordCredentials::class) {
-            //    username = user_name
-            //    password = user_pat
-            // }
-
             val local = Properties()
             local.load(rootProject.file("local.properties").inputStream())
             val user_name_repsy = local.getProperty("repsy.user")
